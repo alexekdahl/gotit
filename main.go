@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/google/uuid"
@@ -21,36 +25,72 @@ var (
 	tunnelsMutex = &sync.RWMutex{}
 )
 
-func startHTTPServer(port string) error {
+func startHTTPServer(ctx context.Context, port string) error {
+	srv := &http.Server{
+		Addr: ":" + port,
+	}
+
 	http.HandleFunc("/", handleReq)
-	return http.ListenAndServe(":"+port, nil)
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("ListenAndServe(): %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	ctxShutDown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return srv.Shutdown(ctxShutDown)
 }
 
-func startSSHServer(port string) error {
+func startSSHServer(ctx context.Context, port string) error {
+	srv := &ssh.Server{
+		Addr: ":" + port,
+	}
+
 	ssh.Handle(handleSSH)
-	return ssh.ListenAndServe(":"+port, nil)
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			if err.Error() != "ssh: Server closed" {
+				log.Fatalf("ListenAndServe(): %v", err)
+			}
+		}
+	}()
+
+	<-ctx.Done()
+	return srv.Close()
 }
 
 func main() {
 	httpPort := os.Getenv("HTTP_PORT")
 	if httpPort == "" {
-		httpPort = "3000" // Default port
+		httpPort = "3000"
 	}
 
 	sshPort := os.Getenv("SSH_PORT")
 	if sshPort == "" {
-		sshPort = "2222" // Default port
+		sshPort = "2222"
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	go func() {
-		if err := startHTTPServer(httpPort); err != nil {
+		if err := startHTTPServer(ctx, httpPort); err != nil {
 			log.Printf("Failed to start HTTP server: %v", err)
 		}
 	}()
 
-	if err := startSSHServer(sshPort); err != nil {
+	if err := startSSHServer(ctx, sshPort); err != nil {
 		log.Printf("Failed to start SSH server: %v", err)
 	}
+
+	<-ctx.Done()
+
+	log.Printf("Shutting down...")
 }
 
 func handleSSH(s ssh.Session) {
