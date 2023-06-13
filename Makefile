@@ -25,5 +25,4 @@ test:
 clean:
 	go clean
 	rm -rf $(BIN_DIR)
-	rm  $(DB_SRC)
 
