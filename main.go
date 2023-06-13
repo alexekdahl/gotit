@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/google/uuid"
@@ -20,124 +19,145 @@ type Tunnel struct {
 	donech chan struct{}
 }
 
-var (
-	tunnels      = make(map[string]chan Tunnel)
-	tunnelsMutex = &sync.RWMutex{}
-)
-
-func startHTTPServer(ctx context.Context, port string) error {
-	srv := &http.Server{
-		Addr: ":" + port,
-	}
-
-	http.HandleFunc("/", handleReq)
-
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("ListenAndServe(): %v", err)
-		}
-	}()
-
-	<-ctx.Done()
-	ctxShutDown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	return srv.Shutdown(ctxShutDown)
+type TunnelStore struct {
+	mu      sync.RWMutex
+	tunnels map[string]chan Tunnel
 }
 
-func startSSHServer(ctx context.Context, port string) error {
-	srv := &ssh.Server{
-		Addr: ":" + port,
+func (ts *TunnelStore) Get(id string) (chan Tunnel, bool) {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	tunnel, ok := ts.tunnels[id]
+	return tunnel, ok
+}
+
+func (ts *TunnelStore) Put(id string, tunnel chan Tunnel) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.tunnels[id] = tunnel
+}
+
+type Server struct {
+	tunnelStore *TunnelStore
+	server      http.Server
+}
+
+func (s *Server) StartHTTPServer(ctx context.Context, port string) error {
+	s.server = http.Server{
+		Addr:    ":" + port,
+		Handler: http.HandlerFunc(s.handleReq),
 	}
 
-	ssh.Handle(handleSSH)
-
 	go func() {
-		if err := srv.ListenAndServe(); err != nil {
-			if err.Error() != "ssh: Server closed" {
-				log.Fatalf("ListenAndServe(): %v", err)
-			}
+		<-ctx.Done()
+		if err := s.server.Shutdown(ctx); err != nil {
+			log.Fatal(err)
 		}
 	}()
 
-	<-ctx.Done()
-	return srv.Close()
+	if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
+		log.Printf("HTTP server ListenAndServe: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+func (s *Server) handleReq(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	tunnelChan, ok := s.tunnelStore.Get(id)
+	if !ok {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+
+	tunnel := Tunnel{
+		w:      w,
+		donech: make(chan struct{}),
+	}
+
+	tunnelChan <- tunnel
+	<-tunnel.donech
+}
+
+func (s *Server) handleSSH(session ssh.Session) {
+	log.Printf("New SSH connection from %s\n", session.RemoteAddr())
+
+	tunnelChan := make(chan Tunnel)
+	tunnelID := uuid.New().String()
+
+	s.tunnelStore.Put(tunnelID, tunnelChan)
+
+	_, err := io.WriteString(session, tunnelID+"\n")
+	if err != nil {
+		log.Printf("Error writing to session: %v", err)
+		return
+	}
+
+	tunnel := <-tunnelChan
+	_, err = io.Copy(tunnel.w, session)
+	if err != nil {
+		log.Printf("Error copying data: %v", err)
+		return
+	}
+
+	tunnel.donech <- struct{}{}
+}
+
+func (s *Server) startSSHServer(ctx context.Context, port string) error {
+	server := &ssh.Server{
+		Addr:    ":" + port,
+		Handler: s.handleSSH,
+	}
+
+	go func() {
+		<-ctx.Done()
+		server.Close()
+	}()
+
+	if err := server.ListenAndServe(); err != nil {
+		log.Printf("SSH server ListenAndServe: %v", err)
+		return err
+	}
+
+	return nil
 }
 
 func main() {
-	httpPort := os.Getenv("HTTP_PORT")
-	if httpPort == "" {
-		httpPort = "3000"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigch := make(chan os.Signal, 1)
+	signal.Notify(sigch, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigch
+		cancel()
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	tunnelStore := &TunnelStore{
+		tunnels: make(map[string]chan Tunnel),
 	}
 
-	sshPort := os.Getenv("SSH_PORT")
-	if sshPort == "" {
-		sshPort = "2222"
+	server := &Server{
+		tunnelStore: tunnelStore,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	go func() {
-		if err := startHTTPServer(ctx, httpPort); err != nil {
-			log.Printf("Failed to start HTTP server: %v", err)
+		defer wg.Done()
+		if err := server.StartHTTPServer(ctx, "8080"); err != nil {
+			log.Fatal(err)
 		}
 	}()
 
-	if err := startSSHServer(ctx, sshPort); err != nil {
-		log.Printf("Failed to start SSH server: %v", err)
-	}
+	go func() {
+		defer wg.Done()
+		if err := server.startSSHServer(ctx, "2222"); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
-	<-ctx.Done()
-
-	log.Printf("Shutting down...")
-}
-
-func handleSSH(s ssh.Session) {
-	id := uuid.New().String()
-	ch := make(chan Tunnel)
-
-	tunnelsMutex.Lock()
-	tunnels[id] = ch
-	tunnelsMutex.Unlock()
-
-	log.Printf("Created tunnel with ID: %s", id)
-	tunnel := <-ch
-	log.Println("Tunnel is ready")
-
-	_, err := io.Copy(tunnel.w, s)
-	if err != nil {
-		log.Printf("Failed to copy from session to tunnel: %v", err)
-	}
-
-	close(tunnel.donech)
-
-	_, err = s.Write([]byte("done"))
-	if err != nil {
-		log.Printf("Failed to write to session: %v", err)
-	}
-}
-
-func handleReq(w http.ResponseWriter, r *http.Request) {
-	idstr := r.URL.Query().Get("id")
-	if idstr == "" {
-		http.Error(w, "ID is required", http.StatusBadRequest)
-		return
-	}
-
-	tunnelsMutex.RLock()
-	tunnel, ok := tunnels[idstr]
-	tunnelsMutex.RUnlock()
-	if !ok {
-		http.Error(w, "Tunnel not found", http.StatusNotFound)
-		return
-	}
-
-	donech := make(chan struct{})
-	tunnel <- Tunnel{
-		w:      w,
-		donech: donech,
-	}
-
-	<-donech
+	wg.Wait()
 }
