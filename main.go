@@ -1,15 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"log"
-	"math"
-	"math/rand"
 	"net/http"
-	"strconv"
+	"os"
+	"sync"
 
 	"github.com/gliderlabs/ssh"
+	"github.com/google/uuid"
 )
 
 type Tunnel struct {
@@ -17,49 +16,88 @@ type Tunnel struct {
 	donech chan struct{}
 }
 
-var tunnels = map[int]chan Tunnel{}
+var (
+	tunnels      = make(map[string]chan Tunnel)
+	tunnelsMutex = &sync.RWMutex{}
+)
+
+func startHTTPServer(port string) error {
+	http.HandleFunc("/", handleReq)
+	return http.ListenAndServe(":"+port, nil)
+}
+
+func startSSHServer(port string) error {
+	ssh.Handle(handleSSH)
+	return ssh.ListenAndServe(":"+port, nil)
+}
 
 func main() {
+	httpPort := os.Getenv("HTTP_PORT")
+	if httpPort == "" {
+		httpPort = "3000" // Default port
+	}
+
+	sshPort := os.Getenv("SSH_PORT")
+	if sshPort == "" {
+		sshPort = "2222" // Default port
+	}
+
 	go func() {
-		http.HandleFunc("/", handleReq)
-		http.ListenAndServe(":3000", nil)
+		if err := startHTTPServer(httpPort); err != nil {
+			log.Printf("Failed to start HTTP server: %v", err)
+		}
 	}()
-	ssh.Handle(func(s ssh.Session) {
-		id := rand.Intn(math.MaxInt)
-		tunnels[id] = make(chan Tunnel)
 
-		fmt.Println("tunnel ID -> %i", id)
-		tunnel := <-tunnels[id]
-		fmt.Println("tunnel ready")
+	if err := startSSHServer(sshPort); err != nil {
+		log.Printf("Failed to start SSH server: %v", err)
+	}
+}
 
-		_, err := io.Copy(tunnel.w, s)
-		if err != nil {
-			log.Fatal(err)
-		}
+func handleSSH(s ssh.Session) {
+	id := uuid.New().String()
+	ch := make(chan Tunnel)
 
-		close(tunnel.donech)
+	tunnelsMutex.Lock()
+	tunnels[id] = ch
+	tunnelsMutex.Unlock()
 
-		_, err = s.Write([]byte("done"))
-		if err != nil {
-			log.Fatal(err)
-		}
-	})
+	log.Printf("Created tunnel with ID: %s", id)
+	tunnel := <-ch
+	log.Println("Tunnel is ready")
 
-	log.Fatal(ssh.ListenAndServe(":2222", nil))
+	_, err := io.Copy(tunnel.w, s)
+	if err != nil {
+		log.Printf("Failed to copy from session to tunnel: %v", err)
+	}
+
+	close(tunnel.donech)
+
+	_, err = s.Write([]byte("done"))
+	if err != nil {
+		log.Printf("Failed to write to session: %v", err)
+	}
 }
 
 func handleReq(w http.ResponseWriter, r *http.Request) {
 	idstr := r.URL.Query().Get("id")
-	id, _ := strconv.Atoi(idstr)
-	tunnel, ok := tunnels[id]
-	if !ok {
-		w.Write([]byte("not found"))
+	if idstr == "" {
+		http.Error(w, "ID is required", http.StatusBadRequest)
 		return
 	}
+
+	tunnelsMutex.RLock()
+	tunnel, ok := tunnels[idstr]
+	tunnelsMutex.RUnlock()
+	if !ok {
+		http.Error(w, "Tunnel not found", http.StatusNotFound)
+		return
+	}
+
 	donech := make(chan struct{})
 	tunnel <- Tunnel{
 		w:      w,
 		donech: donech,
 	}
+
 	<-donech
 }
