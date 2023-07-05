@@ -40,6 +40,12 @@ func (ts *TunnelStore) put(id string, tunnel chan Tunnel) {
 	ts.tunnels[id] = tunnel
 }
 
+func (ts *TunnelStore) delete(id string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	delete(ts.tunnels, id)
+}
+
 type Server struct {
 	tunnelStore *TunnelStore
 	server      http.Server
@@ -83,6 +89,7 @@ func (s *Server) handleReq(w http.ResponseWriter, r *http.Request) {
 
 	tunnelChan <- tunnel
 	<-tunnel.donech
+	s.tunnelStore.delete(id)
 }
 
 func (s *Server) handleSSH(session ssh.Session) {
