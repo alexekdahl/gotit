@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -24,14 +27,14 @@ type TunnelStore struct {
 	tunnels map[string]chan Tunnel
 }
 
-func (ts *TunnelStore) Get(id string) (chan Tunnel, bool) {
+func (ts *TunnelStore) get(id string) (chan Tunnel, bool) {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	tunnel, ok := ts.tunnels[id]
 	return tunnel, ok
 }
 
-func (ts *TunnelStore) Put(id string, tunnel chan Tunnel) {
+func (ts *TunnelStore) put(id string, tunnel chan Tunnel) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.tunnels[id] = tunnel
@@ -42,7 +45,7 @@ type Server struct {
 	server      http.Server
 }
 
-func (s *Server) StartHTTPServer(ctx context.Context, port string) error {
+func (s *Server) startHTTPServer(ctx context.Context, port string) error {
 	s.server = http.Server{
 		Addr:    ":" + port,
 		Handler: http.HandlerFunc(s.handleReq),
@@ -64,8 +67,10 @@ func (s *Server) StartHTTPServer(ctx context.Context, port string) error {
 }
 
 func (s *Server) handleReq(w http.ResponseWriter, r *http.Request) {
+	log.Printf("New HTTP connection from %s\n", r.RemoteAddr)
+
 	id := r.URL.Query().Get("id")
-	tunnelChan, ok := s.tunnelStore.Get(id)
+	tunnelChan, ok := s.tunnelStore.get(id)
 	if !ok {
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
@@ -85,10 +90,18 @@ func (s *Server) handleSSH(session ssh.Session) {
 
 	tunnelChan := make(chan Tunnel)
 	tunnelID := uuid.New().String()
+	s.tunnelStore.put(tunnelID, tunnelChan)
 
-	s.tunnelStore.Put(tunnelID, tunnelChan)
+	// Send a welcome message to the user.
+	_, err := io.WriteString(session, fmt.Sprintf("Welcome, %s!\n", session.User()))
+	if err != nil {
+		log.Printf("Error writing to session: %v", err)
+		return
+	}
 
-	_, err := io.WriteString(session, tunnelID+"\n")
+	baseURL := "http://" + getLocalIP() + ":8080" // Now using local IP address
+	fullURL := baseURL + "/?id=" + tunnelID
+	_, err = io.WriteString(session, fullURL+"\n")
 	if err != nil {
 		log.Printf("Error writing to session: %v", err)
 		return
@@ -104,10 +117,36 @@ func (s *Server) handleSSH(session ssh.Session) {
 	tunnel.donech <- struct{}{}
 }
 
+func keyHandler(ctx ssh.Context, key ssh.PublicKey) bool {
+	absolutePath, err := filepath.Abs("keys") // dummy data
+	if err != nil {
+		log.Fatalf("Failed to get absolute path, err: %v", err)
+	}
+
+	authorizedKeysBytes, err := os.ReadFile(absolutePath)
+	if err != nil {
+		log.Fatalf("Failed to load authorized_keys, err: %v", err)
+	}
+
+	authorizedKeysMap := make(map[string]bool)
+	for len(authorizedKeysBytes) > 0 {
+		pubKey, _, _, rest, err := ssh.ParseAuthorizedKey(authorizedKeysBytes)
+		if err != nil {
+			log.Fatalf("Failed to parse authorized_keys, err: %v", err)
+		}
+
+		authorizedKeysMap[string(pubKey.Marshal())] = true
+		authorizedKeysBytes = rest
+	}
+
+	return authorizedKeysMap[string(key.Marshal())]
+}
+
 func (s *Server) startSSHServer(ctx context.Context, port string) error {
 	server := &ssh.Server{
-		Addr:    ":" + port,
-		Handler: s.handleSSH,
+		Addr:             ":" + port,
+		Handler:          s.handleSSH,
+		PublicKeyHandler: keyHandler,
 	}
 
 	go func() {
@@ -121,6 +160,23 @@ func (s *Server) startSSHServer(ctx context.Context, port string) error {
 	}
 
 	return nil
+}
+
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		log.Fatalf("Cannot get local IP address: %v", err)
+	}
+
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+
+	return ""
 }
 
 func main() {
@@ -147,7 +203,7 @@ func main() {
 
 	go func() {
 		defer wg.Done()
-		if err := server.StartHTTPServer(ctx, "8080"); err != nil {
+		if err := server.startHTTPServer(ctx, "8080"); err != nil {
 			log.Fatal(err)
 		}
 	}()
