@@ -105,7 +105,7 @@ func (s *SSHServer) handleSSH(session ssh.Session) {
 	tunnel.donech <- struct{}{}
 }
 
-func (s *SSHServer) StartSSHServer(ctx context.Context, port string) error {
+func (s *SSHServer) StartSSHServer(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		s.ssh.Close()

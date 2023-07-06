@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -12,6 +13,9 @@ import (
 )
 
 func main() {
+	httpPort := flag.String("httpport", "8080", "The port to http server")
+	sshPort := flag.String("sshport", "2020", "The port to ssh server")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -25,20 +29,20 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	tunnelStore := server.NewTunnel()
-	httpServer := server.NewHTTPServer(tunnelStore, "8080")
-	sshServer := server.NewSSHServer(tunnelStore, "2222")
+	tunnelStorer := server.NewTunnel()
+	httpServer := server.NewHTTPServer(tunnelStorer, *httpPort)
+	sshServer := server.NewSSHServer(tunnelStorer, *sshPort)
 
 	go func() {
 		defer wg.Done()
-		if err := httpServer.StartHTTPServer(ctx, "8080"); err != nil {
+		if err := httpServer.StartHTTPServer(ctx); err != nil {
 			log.Fatal(err)
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		if err := sshServer.StartSSHServer(ctx, "2222"); err != nil {
+		if err := sshServer.StartSSHServer(ctx); err != nil {
 			log.Fatal(err)
 		}
 	}()

@@ -24,7 +24,7 @@ func NewHTTPServer(tunnelStorer *TunnelStorer, port string) *HTTPServer {
 	return s
 }
 
-func (s *HTTPServer) StartHTTPServer(ctx context.Context, port string) error {
+func (s *HTTPServer) StartHTTPServer(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		if err := s.http.Shutdown(ctx); err != nil {
