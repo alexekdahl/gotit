@@ -13,8 +13,8 @@ import (
 )
 
 func main() {
-	httpPort := flag.String("httpport", "8080", "The port to http server")
-	sshPort := flag.String("sshport", "2020", "The port to ssh server")
+	httpPort := flag.String("httpport", "8080", "Port to the http server")
+	sshPort := flag.String("sshport", "2222", "Port to the ssh server")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

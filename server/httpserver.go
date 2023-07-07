@@ -7,13 +7,13 @@ import (
 )
 
 type HTTPServer struct {
-	tunnelStore *TunnelStorer
-	http        http.Server
+	tunnelStorer TunnelStorer
+	http         http.Server
 }
 
-func NewHTTPServer(tunnelStorer *TunnelStorer, port string) *HTTPServer {
+func NewHTTPServer(tunnelStorer TunnelStorer, port string) *HTTPServer {
 	s := &HTTPServer{
-		tunnelStore: tunnelStorer,
+		tunnelStorer: tunnelStorer,
 		http: http.Server{
 			Addr: ":" + port,
 		},
@@ -44,7 +44,7 @@ func (s *HTTPServer) handleHTTPReq(w http.ResponseWriter, r *http.Request) {
 	log.Printf("New HTTP connection from %s\n", r.RemoteAddr)
 
 	id := r.URL.Query().Get("id")
-	tunnelChan, ok := s.tunnelStore.Get(id)
+	tunnelChan, ok := s.tunnelStorer.Get(id)
 	if !ok {
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
@@ -57,5 +57,4 @@ func (s *HTTPServer) handleHTTPReq(w http.ResponseWriter, r *http.Request) {
 
 	tunnelChan <- tunnel
 	<-tunnel.donech
-	s.tunnelStore.Delete(id)
 }

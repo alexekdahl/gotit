@@ -14,11 +14,11 @@ import (
 )
 
 type SSHServer struct {
-	tunnelStorer *TunnelStorer
+	tunnelStorer TunnelStorer
 	ssh          *ssh.Server
 }
 
-func NewSSHServer(tunnelStorer *TunnelStorer, port string) *SSHServer {
+func NewSSHServer(tunnelStorer TunnelStorer, port string) *SSHServer {
 	s := &SSHServer{
 		tunnelStorer: tunnelStorer,
 		ssh: &ssh.Server{
@@ -74,11 +74,19 @@ func getLocalIP() string {
 }
 
 func (s *SSHServer) handleSSH(session ssh.Session) {
+	// Listen for the context done signal in a separate goroutine.
+
 	log.Printf("New SSH connection from %s\n", session.RemoteAddr())
 
 	tunnelChan := make(chan Tunnel)
 	tunnelID := uuid.New().String()
 	s.tunnelStorer.Put(tunnelID, tunnelChan)
+
+	go func() {
+		<-session.Context().Done()
+		log.Printf("SSH connection from %s aborted\n", session.RemoteAddr())
+		s.tunnelStorer.Delete(tunnelID)
+	}()
 
 	// Send a welcome message to the user.
 	_, err := io.WriteString(session, fmt.Sprintf("Welcome, %s!\n", session.User()))
