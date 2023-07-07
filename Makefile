@@ -8,7 +8,7 @@ cibuild:
 #####################################
 
 BINARY=gotit
-SRC=./main.go
+SRC=./cmd/gotit/main.go
 BIN_DIR=./bin
 .DEFAULT_GOAL := build
 BUILD_CMD=CGO_ENABLED=0 go build -mod=readonly -ldflags="-s -w" -gcflags=all=-l -trimpath=true
