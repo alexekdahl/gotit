@@ -1,6 +1,7 @@
 # gotit
 [![Go Report Card](https://goreportcard.com/badge/github.com/AlexEkdahl/gotit)](https://goreportcard.com/report/github.com/AlexEkdahl/gotit)
 [![GitHub license](https://img.shields.io/github/license/AlexEkdahl/gotit)](https://github.com/AlexEkdahl/gotit/blob/main/LICENSE)
+[![Build and Test](https://github.com/AlexEkdahl/gotit/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/AlexEkdahl/gotit/actions/workflows/test.yml)
 
 **gotit** is a simple and efficient tool that establishes a secure peer-to-peer connection between an SSH client and an HTTP server. It's designed to be lightweight and easy to use, making it perfect for quick data transfers or remote command execution.
 
