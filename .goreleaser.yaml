@@ -37,6 +37,18 @@ changelog:
       - '^docs:'
       - '^test:'
 
+dockers:
+  - image_templates:
+      - "your_dockerhub_username/gotit:{{ .Tag }}"
+      - "your_dockerhub_username/gotit:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.name=gotit"
+      - "--label=org.opencontainers.image.revision={{.Commit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+
 # The lines beneath this are called `modelines`. See `:help modeline`
 # Feel free to remove those if you don't want/use them.
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
