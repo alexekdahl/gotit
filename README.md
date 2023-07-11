@@ -3,7 +3,7 @@
 [![GitHub license](https://img.shields.io/github/license/AlexEkdahl/gotit)](https://github.com/AlexEkdahl/gotit/blob/main/LICENSE)
 [![Build and Test](https://github.com/AlexEkdahl/gotit/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/AlexEkdahl/gotit/actions/workflows/test.yml)
 
-**gotit** is a simple and efficient tool that establishes a secure peer-to-peer connection between an SSH client and an HTTP server. It's designed to be lightweight and easy to use, making it perfect for quick data transfers or remote command execution.
+**gotit** is a lightweight tool that establishes a secure peer-to-peer connection between an SSH client and an HTTP client. It's designed for quick data transfers or remote command execution without storing any data on the server.
 
 ## Features
 
@@ -38,12 +38,9 @@ gotit --httpport 8000 --sshport 2200
 
 ## Sending Data
 
-To send data, you'll need to establish an SSH connection to the Gotit server. Once connected, the server will provide a unique URL for the session.
+To send data, establish an SSH connection to the gotit server. Once connected, the server will provide a unique URL for the session.
 
-You can then initiate a file transfer from the SSH client. The data you send will be forwarded to the HTTP client that connects to the provided URL.
-
-For example, you can use the following commands to send a file:
-Once the server is running, you can establish an SSH connection to it. The server will provide a unique URL for each SSH session. You can then use this URL to send HTTP requests to the SSH client.
+Initiate a file transfer from the SSH client. The data you send will be forwarded to the HTTP client that connects to the provided URL:
 
 ```bash
 ssh sshserver -p 2020 < main.go

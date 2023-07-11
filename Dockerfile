@@ -20,6 +20,6 @@ COPY --from=builder /app/main .
 
 COPY --from=builder /app/keys ./keys
 
-EXPOSE 8080 2s22
+EXPOSE 8080 2222
 
 CMD ["./main"]
