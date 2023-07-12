@@ -11,6 +11,7 @@ builds:
       - linux
       - windows
       - darwin
+    main: ./cmd/gotit
 
 archives:
   - format: tar.gz
