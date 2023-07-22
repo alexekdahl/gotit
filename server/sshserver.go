@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"os"
 	"path/filepath"
 
@@ -56,21 +55,12 @@ func keyHandler(ctx ssh.Context, key ssh.PublicKey) bool {
 	return authorizedKeysMap[string(key.Marshal())]
 }
 
-func getLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		log.Fatalf("Cannot get local IP address: %v", err)
+func getServerAddr() string {
+	if os.Getenv("GOTIT_ADDR") != "" {
+		return os.Getenv("GOTIT_ADDR")
 	}
 
-	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
-		}
-	}
-
-	return ""
+	return "http://localhost:8080"
 }
 
 func (s *SSHServer) handleSSH(session ssh.Session) {
@@ -95,7 +85,7 @@ func (s *SSHServer) handleSSH(session ssh.Session) {
 		return
 	}
 
-	baseURL := "http://" + getLocalIP() + ":8080" // Now using local IP address
+	baseURL := getServerAddr()
 	fullURL := baseURL + "/?id=" + tunnelID
 	_, err = io.WriteString(session, fullURL+"\n")
 	if err != nil {
