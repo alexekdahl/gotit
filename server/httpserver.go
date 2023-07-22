@@ -54,7 +54,7 @@ func (s *HTTPServer) handleHTTPReq(w http.ResponseWriter, r *http.Request) {
 		w:      w,
 		donech: make(chan struct{}),
 	}
-
+	w.Header().Set("Content-Disposition", `attachment; filename="gotit"`)
 	tunnelChan <- tunnel
 	<-tunnel.donech
 }

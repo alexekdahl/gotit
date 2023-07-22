@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/google/uuid"
@@ -74,7 +77,7 @@ func (s *SSHServer) handleSSH(session ssh.Session) {
 
 	go func() {
 		<-session.Context().Done()
-		log.Printf("SSH connection from %s aborted\n", session.RemoteAddr())
+		log.Printf("SSH connection from %s closed\n", session.RemoteAddr())
 		s.tunnelStorer.Delete(tunnelID)
 	}()
 
@@ -94,9 +97,57 @@ func (s *SSHServer) handleSSH(session ssh.Session) {
 	}
 
 	tunnel := <-tunnelChan
-	_, err = io.Copy(tunnel.w, session)
+	startTime := time.Now()
+
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		_, err := io.Copy(pw, session)
+		if err != nil {
+			log.Printf("Error copying data: %v", err)
+		}
+	}()
+	buf := make([]byte, 512)
+	n, err := io.ReadFull(pr, buf)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		log.Printf("Error reading data: %v", err)
+		return
+	}
+	// Determine the MIME type from the first 512 bytes of the data
+	mimeer := http.DetectContentType(buf[:n])
+
+	ext, err := mime.ExtensionsByType(mimeer)
+	if err != nil {
+		log.Printf("Error determining file extension: %v", err)
+		return
+	}
+	// If the MIME type has associated extensions, use the first one
+	filename := "file"
+	if len(ext) > 0 {
+		filename += ext[0]
+	}
+	// Set the Content-Disposition header to indicate the filename of the downloadable file
+	tunnel.w.Header().Set("Content-Type", mimeer)
+	tunnel.w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	// Write the buffered data to the tunnel's writer
+	_, err = tunnel.w.Write(buf[:n])
+	if err != nil {
+		log.Printf("Error writing data to tunnel: %v", err)
+		return
+	}
+	// Continue copying the rest of the data to the tunnel's writer
+	b, err := io.Copy(tunnel.w, pr)
 	if err != nil {
 		log.Printf("Error copying data: %v", err)
+		return
+	}
+
+	elapsedTime := time.Since(startTime).Seconds()
+	speed := float64(b*8) / (elapsedTime * 1000000) // speed in Mb/s
+
+	_, err = io.WriteString(session, fmt.Sprintf("Transfer speed: %.2f Mb/s\n", speed))
+	if err != nil {
+		log.Printf("Error writing to session: %v", err)
 		return
 	}
 

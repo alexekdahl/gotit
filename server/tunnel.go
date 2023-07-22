@@ -1,7 +1,7 @@
 package server
 
 import (
-	"io"
+	"net/http"
 	"sync"
 )
 
@@ -12,7 +12,7 @@ type TunnelStorer interface {
 }
 
 type Tunnel struct {
-	w      io.Writer
+	w      http.ResponseWriter
 	donech chan struct{}
 }
 
