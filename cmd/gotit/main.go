@@ -26,12 +26,15 @@ func main() {
 		cancel()
 	}()
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-
 	tunnelStorer := server.NewTunnel()
 	httpServer := server.NewHTTPServer(tunnelStorer, *httpPort)
-	sshServer := server.NewSSHServer(tunnelStorer, *sshPort)
+	sshServer, err := server.NewSSHServer(tunnelStorer, *sshPort)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
