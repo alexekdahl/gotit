@@ -31,7 +31,7 @@ func NewSSHServer(tunnelStorer TunnelStorer, port string) *SSHServer {
 }
 
 func keyHandler(ctx ssh.Context, key ssh.PublicKey) bool {
-	absolutePath, err := filepath.Abs("keys") // dummy data
+	absolutePath, err := filepath.Abs("authorized_keys") // dummy data
 	if err != nil {
 		log.Fatalf("Failed to get absolute path, err: %v", err)
 	}
