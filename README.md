@@ -4,7 +4,7 @@
 [![Build and Test](https://github.com/AlexEkdahl/gotit/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/AlexEkdahl/gotit/actions/workflows/test.yml)
 
 <p align="left">
-  <img src="https://img.bigdaddylongleg.com/img/mail.png"  width="45%" />
+  <img src="https://img.gotit.sh/gotit-logo.png"  width="45%" />
 </p>
 
 **gotit** is a lightweight tool that establishes a secure peer-to-peer connection between an SSH client and an HTTP client. It's designed for quick data transfers without storing any data on the server.
