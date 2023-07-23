@@ -42,17 +42,26 @@ gotit --httpport 8000 --sshport 2200
 
 ## Sending Data
 
-To send data, establish an SSH connection to the gotit server. Once connected, the server will provide a unique URL for the session.
-
-Initiate a file transfer from the SSH client. The data you send will be forwarded to the HTTP client that connects to the provided URL:
+To send data, establish an SSH connection to the **gotit** server. Once connected, the server will provide a unique URL for the session.
+Initiate a file transfer from the SSH client. The data you send will be forwarded to the HTTP client that connects to the provided URL.
 
 ```bash
-ssh sshserver -p 2020 < main.go
+ssh sshserver < main.go
 ```
-or
 ```bash
-cat main.go | ssh sshserver -p 2020
+cat main.go | ssh sshserver
 ```
+
+If you know the file type of the data you're transferring, you can include it as an argument in the command. For example, if you're transferring a JSON file, you can use the following command:
+
+```bash
+ssh sshserver json < data.json
+```
+```bash
+cat main.go | ssh sshserver go
+```
+
+If you don't specify a file type type in the command, the **gotit** server will determine the MIME type from the first 512 bytes of the data. If the MIME type cannot be determined from the first 512 bytes, the server will default to application/octet-stream, which represents arbitrary binary data.
 
 ## Contributing
 
