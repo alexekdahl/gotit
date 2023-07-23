@@ -22,4 +22,4 @@ COPY --from=builder /app/authorized_keys /root/authorized_keys
 
 EXPOSE 8080 2222
 
-CMD ["./bin/gotit"]
+CMD ["./bin/gotit", "--env", "PROD"]

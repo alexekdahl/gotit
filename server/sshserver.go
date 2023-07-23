@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/AlexEkdahl/gotit/utils/logger"
 	"github.com/gliderlabs/ssh"
 	"github.com/google/uuid"
 )
@@ -19,10 +19,15 @@ type SSHServer struct {
 	tunnelStorer      TunnelStorer
 	ssh               *ssh.Server
 	authorizedKeysMap map[string]bool
+	logger            logger.Logger
+	writer            SessionWriter
 	session           ssh.Session
+	addr              string
 }
 
-func NewSSHServer(tunnelStorer TunnelStorer, port string) (*SSHServer, error) {
+const filename = "gotit"
+
+func NewSSHServer(tunnelStorer TunnelStorer, logger logger.Logger, port string) (*SSHServer, error) {
 	if tunnelStorer == nil {
 		return nil, fmt.Errorf("tunnelStorer cannot be nil")
 	}
@@ -37,6 +42,8 @@ func NewSSHServer(tunnelStorer TunnelStorer, port string) (*SSHServer, error) {
 			Addr: ":" + port,
 		},
 		authorizedKeysMap: make(map[string]bool),
+		logger:            logger,
+		addr:              getServerAddr(),
 	}
 
 	s.ssh.PublicKeyHandler = s.keyHandler
@@ -80,7 +87,7 @@ func (s *SSHServer) keyHandler(ctx ssh.Context, key ssh.PublicKey) bool {
 
 	err := s.loadAuthorizedKeys()
 	if err != nil {
-		log.Printf("Error loading authorized keys: %v", err)
+		s.logger.Warn("Error loading authorized keys: %v", err)
 		return false
 	}
 	return s.authorizedKeysMap[string(key.Marshal())]
@@ -96,110 +103,80 @@ func getServerAddr() string {
 }
 
 func (s *SSHServer) handleSSH(session ssh.Session) {
-	log.Printf("New SSH connection from %s\n", session.RemoteAddr())
+	startTime := time.Now()
+	s.logger.Info("New SSH connection from %v@%v\n", session.User(), session.RemoteAddr())
 
 	s.session = session
+	s.writer = NewSessionWriter(session)
+
 	tunnelChan := make(chan Tunnel)
 	tunnelID := uuid.New().String()
 	s.tunnelStorer.Put(tunnelID, tunnelChan)
 
-	s.writeWelcomeMsg()
-	s.writeUrl(tunnelID)
+	s.writer.WriteWelcomeMsg(session.User())
+	s.writer.WriteURL(fmt.Sprintf("%s/?id=%s", s.addr, tunnelID))
 
 	go func() {
 		<-session.Context().Done()
-		log.Printf("SSH connection from %s closed\n", session.RemoteAddr())
+		s.logger.Debug("SSH connection from %s closed\n", session.RemoteAddr())
 		s.tunnelStorer.Delete(tunnelID)
 	}()
 
 	cmd := session.Command()
 	if len(cmd) == 1 {
-		s.handleWithMime(session, cmd[0], tunnelID)
+		err := s.handleWithMime(session, cmd[0], tunnelID)
+		if err != nil {
+			s.logger.Error(err)
+			s.writer.WriteError(err)
+			return
+		}
 	} else {
-		s.handleWithoutMime(session, tunnelID)
+		err := s.handleWithoutMime(session, tunnelID)
+		if err != nil {
+			s.logger.Error(err)
+			s.writer.WriteError(err)
+			return
+		}
 	}
+	elapsedTime := time.Since(startTime).Seconds()
+	s.logger.Info("Transfer completed for %v@%v", session.User(), session.RemoteAddr())
+	s.logger.Info("Connection opened %0.fs", elapsedTime)
 }
 
-func (s *SSHServer) handleWithMime(session ssh.Session, mime string, tunnelID string) {
+func (s *SSHServer) handleWithMime(session ssh.Session, mime string, tunnelID string) error {
 	tunnelChan, ok := s.tunnelStorer.Get(tunnelID)
 	if !ok {
-		s.writeError()
+		s.writer.WriteError(ErrSomethingWentWrong)
 		session.Context().Done()
 	}
 
 	tunnel := <-tunnelChan
 	startTime := time.Now()
 
-	filename := "gotit_file." + mime
+	fName := fmt.Sprintf("%s.%s", filename, mime)
 
 	tunnel.w.Header().Set("Content-Type", mime)
-	tunnel.w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	tunnel.w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fName))
 
 	b, err := io.Copy(tunnel.w, session)
 	if err != nil {
-		log.Printf("Error copying data: %v", err)
-		return
+		return &CopyDataError{err: err}
 	}
 
 	elapsedTime := time.Since(startTime).Seconds()
 	speed := float64(b*8) / (elapsedTime * 1000000) // speed in Mb/s
 
-	s.writeTransferSpeed(speed)
+	s.writer.WriteTransferSpeed(speed)
 
 	tunnel.donech <- struct{}{}
+
+	return nil
 }
 
-// Send a welcome message to the user.
-func (s *SSHServer) writeWelcomeMsg() {
-	_, err := io.WriteString(s.session, fmt.Sprintf("Welcome, %s!\n", s.session.User()))
-	if err != nil {
-		log.Printf("Error writing to session: %v", err)
-		return
-	}
-}
-
-func (s *SSHServer) writeTypeUsage() {
-	usage := "ssh gotit.sh [MIMETYPE] < response.json"
-
-	_, err := io.WriteString(s.session, usage)
-	if err != nil {
-		log.Printf("Error writing to session: %v", err)
-		return
-	}
-}
-
-func (s *SSHServer) writeTransferSpeed(speed float64) {
-	_, err := io.WriteString(s.session, fmt.Sprintf("Transfer speed: %.2f Mb/s\n", speed))
-	if err != nil {
-		log.Printf("Error writing to session: %v", err)
-		return
-	}
-}
-
-func (s *SSHServer) writeError() {
-	error := "something went wrong"
-
-	_, err := io.WriteString(s.session, error)
-	if err != nil {
-		log.Printf("Error writing to session: %v", err)
-		return
-	}
-}
-
-func (s *SSHServer) writeUrl(tunnelID string) {
-	baseURL := getServerAddr()
-	fullURL := baseURL + "/?id=" + tunnelID
-	_, err := io.WriteString(s.session, fullURL+"\n")
-	if err != nil {
-		log.Printf("Error writing to session: %v", err)
-		return
-	}
-}
-
-func (s *SSHServer) handleWithoutMime(session ssh.Session, tunnelID string) {
+func (s *SSHServer) handleWithoutMime(session ssh.Session, tunnelID string) error {
 	tunnelChan, ok := s.tunnelStorer.Get(tunnelID)
 	if !ok {
-		s.writeError()
+		s.writer.WriteError(ErrSomethingWentWrong)
 		session.Context().Done()
 	}
 
@@ -211,63 +188,62 @@ func (s *SSHServer) handleWithoutMime(session ssh.Session, tunnelID string) {
 		defer pw.Close()
 		_, err := io.Copy(pw, session)
 		if err != nil {
-			log.Printf("Error copying data: %v", err)
+			s.logger.Error(&CopyDataError{err: err})
 		}
 	}()
 	buf := make([]byte, 512)
 	n, err := io.ReadFull(pr, buf)
 	if err != nil && err != io.ErrUnexpectedEOF {
-		log.Printf("Error reading data: %v", err)
-		return
+		return &ReadDataError{err: err}
 	}
 	// Determine the MIME type from the first 512 bytes of the data
 	mimeer := http.DetectContentType(buf[:n])
 
 	ext, err := mime.ExtensionsByType(mimeer)
-	fmt.Println("ext", ext)
 	if err != nil {
-		log.Printf("Error determining file extension: %v", err)
-		return
+		return &FileExtensionError{err: err}
 	}
 	// If the MIME type has associated extensions, use the last one
-	filename := "gotit_file"
+	fName := filename
 	if len(ext) > 0 {
-		filename += ext[len(ext)-1]
+		fName += ext[len(ext)-1]
 	}
 	// Set the Content-Disposition header to indicate the filename of the downloadable file
 	tunnel.w.Header().Set("Content-Type", mimeer)
-	tunnel.w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	tunnel.w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fName))
 	// Write the buffered data to the tunnel's writer
 	_, err = tunnel.w.Write(buf[:n])
 	if err != nil {
-		log.Printf("Error writing data to tunnel: %v", err)
-		return
+		return &TunnelWriteError{err: err}
 	}
 	// Continue copying the rest of the data to the tunnel's writer
 	b, err := io.Copy(tunnel.w, pr)
 	if err != nil {
-		log.Printf("Error copying data: %v", err)
-		return
+		return &CopyDataError{err: err}
 	}
 
 	elapsedTime := time.Since(startTime).Seconds()
 	speed := float64(b*8) / (elapsedTime * 1000000) // speed in Mb/s
 
-	s.writeTransferSpeed(speed)
+	s.writer.WriteTransferSpeed(speed)
 
 	tunnel.donech <- struct{}{}
+
+	return nil
 }
 
 func (s *SSHServer) StartSSHServer(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
-		if err := s.ssh.Close(); err != nil {
-			log.Printf("Error closing SSH server: %v", err)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		s.logger.Debug("Shuting down SSH server")
+		defer cancel()
+		if err := s.ssh.Shutdown(shutdownCtx); err != nil {
+			s.logger.Error(&SSHTerminationError{err: err})
 		}
 	}()
 
-	if err := s.ssh.ListenAndServe(); err != nil {
-		log.Printf("SSH server ListenAndServe: %v", err)
+	if err := s.ssh.ListenAndServe(); err != ssh.ErrServerClosed {
 		return err
 	}
 

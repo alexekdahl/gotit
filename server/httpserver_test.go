@@ -6,12 +6,17 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/AlexEkdahl/gotit/utils/logger"
 )
 
 func TestHTTPServer(t *testing.T) {
 	// Start the HTTP server
+	l, _ := logger.NewLogger(logger.Config{
+		Env: "LOCAL",
+	})
 	tunnelStore := NewTunnel()
-	server := NewHTTPServer(tunnelStore, "8080")
+	server := NewHTTPServer(tunnelStore, l, "8080")
 
 	errCh := make(chan error, 1)
 	go func() {
