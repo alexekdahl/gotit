@@ -166,7 +166,7 @@ func (s *SSHServer) handleWithMime(session ssh.Session, mime string, tunnelID st
 	elapsedTime := time.Since(startTime).Seconds()
 	speed := float64(b*8) / (elapsedTime * 1000000) // speed in Mb/s
 
-	s.writer.WriteTransferSpeed(speed)
+	s.writer.WriteTransferDone(speed)
 
 	tunnel.donech <- struct{}{}
 
@@ -225,7 +225,7 @@ func (s *SSHServer) handleWithoutMime(session ssh.Session, tunnelID string) erro
 	elapsedTime := time.Since(startTime).Seconds()
 	speed := float64(b*8) / (elapsedTime * 1000000) // speed in Mb/s
 
-	s.writer.WriteTransferSpeed(speed)
+	s.writer.WriteTransferDone(speed)
 
 	tunnel.donech <- struct{}{}
 
