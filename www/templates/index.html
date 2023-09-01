@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>gotit.sh - Fast, Secure, Peer-to-Peer</title>
+  <style>
+    /* Global Styling */
+    body, html {
+      margin: 0;
+      padding: 0;
+      background-color: #333;
+      color: #fff;
+      font-family: 'Arial', sans-serif;
+    }
+    header {
+      width: 100%;
+    }
+    header, footer, main {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 1rem;
+    }
+    .container {
+      max-width: 1200px;
+      width: 100%;
+      background-color: #344;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    /* Header */
+    #logo {
+      width: 100px;
+    }
+    /* Features */
+    .feature {
+      background-color: #333;
+      margin: 1rem;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+    }
+    .feature ul li {
+      background-color: #444;
+      margin: 8px 0;
+      padding: 12px;
+      border-radius: 4px;
+    }
+    /* Terminal Section */
+    .terminal {
+      background-color: #282C34;
+      border: 1px solid #ABB2BF;
+      padding: 40px 20px 20px;
+      border-radius: 5px;
+      position: relative;
+      overflow: auto;
+      color: #ABB2BF;
+    }
+    .terminal-buttons, .terminal-title, button.copy {
+      position: absolute;
+      top: 10px;
+    }
+    .terminal-buttons {
+      left: 10px;
+    }
+    .terminal-button {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 5px;
+      display: inline-block;
+    }
+    .close { background-color: #fc625d; }
+    .minimize { background-color: #fdbc40; }
+    .expand { background-color: #35cd4b; }
+    button.copy {
+      right: 10px;
+      background-color: #61AFEF;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+    .terminal-title {
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 14px;
+    }
+    .line {
+      opacity: 0;
+      transition: opacity 0.5s ease-in-out;
+    }
+
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <img src="https://img.gotit.sh/gotit-logo.png" alt="Gotit Logo" id="logo">
+      <h1>Welcome to Gotit</h1>
+      <p>Fast, Secure, Peer-to-Peer Data Transfers</p>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <section class="feature">
+        <h2>Why Gotit? Why Not!</h2>
+        <p>Alright, let's cut to the chase. In a world brimming with data transfer tools, what makes Gotit the alpha? Well, it's not just a tool; it's a lifestyle. It’s fast, it’s secure, and it's all about that P2P connection.</p>
+        <p>So, what's the hype about? Check this:</p>
+        <ul>
+          <li>🚀 Blazing Fast: Because who has time to wait?</li>
+          <li>🛡 Bulletproof Security: Guard your data like a pro.</li>
+          <li>👾 Geek Approved: Designed for those who speak code.</li>
+          <li>🤫 Incognito Mode: Zero data storage. Your secret's safe.</li>
+        </ul>
+      </section>
+
+      <section class="feature">
+        <h2>Features</h2>
+        <ul>
+          <li>🔒 Secure SSH Connection</li>
+          <li>🕒 Lightweight HTTP Server</li>
+          <li>👥 Peer-to-peer Data Transfer</li>
+          <li>📂 No Data Storage on the Server</li>
+        </ul>
+      </section>
+
+      <section class="feature animated-terminal">
+        <h2>See Gotit in Action!</h2>
+        <div class="terminal">
+          <div class="terminal-buttons">
+            <span class="terminal-button close"></span>
+            <span class="terminal-button minimize"></span>
+            <span class="terminal-button expand"></span>
+          </div>
+          <div class="terminal-title">bash</div>
+          <button class="copy" onclick="copyToClipboard('#code-example')">Copy</button>
+          <div class="terminal-content">
+            <div class="line" id="line1">$ git clone https://github.com/AlexEkdahl/gotit.git</div>
+            <div class="line" id="line2">$ cd gotit</div>
+            <div class="line" id="line3">$ make</div>
+            <div class="line" id="line4">$ make run</div>
+            <div class="line" id="line5">$ ssh sshserver < main.go</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Copyright © 2023 Gotit. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script>
+     document.addEventListener("DOMContentLoaded", function () {
+      const lines = Array.from(document.querySelectorAll('.line'));
+       console.log(lines)
+      let delay = 0;
+
+      lines.forEach((line, index) => {
+        delay += 1000 + (index * 500);
+        setTimeout(() => {
+          line.style.opacity = '1';
+        }, delay);
+      });
+    });
+
+    function copyToClipboard(elementId) {
+      const el = document.querySelector(elementId);
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand('copy');
+      alert('Copied to clipboard!');
+    }
+  </script>
+</body>
+</html>
