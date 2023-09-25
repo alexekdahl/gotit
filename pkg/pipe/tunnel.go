@@ -1,19 +1,13 @@
-package server
+package pipe
 
 import (
 	"net/http"
 	"sync"
 )
 
-type TunnelStorer interface {
-	Get(id string) (chan Tunnel, bool)
-	Put(id string, tunnel chan Tunnel)
-	Delete(id string)
-}
-
 type Tunnel struct {
-	w      http.ResponseWriter
-	donech chan struct{}
+	W      http.ResponseWriter
+	Donech chan struct{}
 }
 
 type TunnelStore struct {
@@ -40,7 +34,7 @@ func (ts *TunnelStore) Delete(id string) {
 	delete(ts.tunnels, id)
 }
 
-func NewTunnel() TunnelStorer {
+func NewTunnelStore() *TunnelStore {
 	tunnelStorer := &TunnelStore{
 		tunnels: make(map[string]chan Tunnel),
 	}

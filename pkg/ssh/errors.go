@@ -1,6 +1,8 @@
-package server
+package ssh
 
 import "fmt"
+
+var ErrSomethingWentWrong = &CustomError{Description: "Something went wrong"}
 
 type CustomError struct {
 	Description string
@@ -16,14 +18,6 @@ type CopyDataError struct {
 
 func (e *CopyDataError) Error() string {
 	return fmt.Sprintf("Error copying data: %v", e.err)
-}
-
-type FileError struct {
-	err error
-}
-
-func (e *FileError) Error() string {
-	return fmt.Sprintf("Error determining file extension: %v", e.err)
 }
 
 type ReadDataError struct {
@@ -57,16 +51,3 @@ type SSHTerminationError struct {
 func (e *SSHTerminationError) Error() string {
 	return fmt.Sprintf("Error closing SSH server: %v", e.err)
 }
-
-type HTTPTerminationError struct {
-	err error
-}
-
-func (e *HTTPTerminationError) Error() string {
-	return fmt.Sprintf("Shutdown HTTP server error: %v", e.err)
-}
-
-var (
-	ErrSomethingWentWrong = &CustomError{Description: "Something went wrong"}
-	ErrCouldNotFindItem   = &CustomError{Description: "Could not find the item"}
-)
