@@ -1,4 +1,4 @@
-package server
+package pipe
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 )
 
 func TestTunnelStore(t *testing.T) {
-	tunnelStore := NewTunnel()
+	tunnelStore := NewTunnelStore()
 
 	// Test Put method
 	tunnel := make(chan Tunnel)
@@ -28,7 +28,7 @@ func TestTunnelStore(t *testing.T) {
 }
 
 func TestTunnelStoreConcurrent(t *testing.T) {
-	tunnelStore := NewTunnel()
+	tunnelStore := NewTunnelStore()
 	var wg sync.WaitGroup
 
 	for i := 0; i < 100; i++ {

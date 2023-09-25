@@ -1,4 +1,4 @@
-package server
+package ssh
 
 import (
 	"context"
@@ -10,25 +10,32 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/AlexEkdahl/gotit/utils/logger"
+	"github.com/AlexEkdahl/gotit/pkg/pipe"
+	"github.com/AlexEkdahl/gotit/pkg/util"
 	"github.com/gliderlabs/ssh"
 	"github.com/google/uuid"
 )
 
+type tunnelStorer interface {
+	Get(id string) (chan pipe.Tunnel, bool)
+	Put(id string, tunnel chan pipe.Tunnel)
+	Delete(id string)
+}
+
 type SSHServer struct {
-	tunnelStorer      TunnelStorer
+	tunnelStorer      tunnelStorer
 	ssh               *ssh.Server
 	authorizedKeysMap map[string]bool
-	logger            logger.Logger
-	writer            SessionWriter
+	logger            util.Logger
+	writer            *SessionWriter
 	session           ssh.Session
 	addr              string
 }
 
 const filename = "gotit"
 
-func NewSSHServer(tunnelStorer TunnelStorer, logger logger.Logger, port string) (*SSHServer, error) {
-	if tunnelStorer == nil {
+func NewServer(ts tunnelStorer, logger util.Logger, port string) (*SSHServer, error) {
+	if ts == nil {
 		return nil, fmt.Errorf("tunnelStorer cannot be nil")
 	}
 
@@ -37,7 +44,7 @@ func NewSSHServer(tunnelStorer TunnelStorer, logger logger.Logger, port string) 
 	}
 
 	s := &SSHServer{
-		tunnelStorer: tunnelStorer,
+		tunnelStorer: ts,
 		ssh: &ssh.Server{
 			Addr: ":" + port,
 		},
@@ -109,7 +116,7 @@ func (s *SSHServer) handleSSH(session ssh.Session) {
 	s.session = session
 	s.writer = NewSessionWriter(session)
 
-	tunnelChan := make(chan Tunnel)
+	tunnelChan := make(chan pipe.Tunnel)
 	tunnelID := uuid.New().String()
 	s.tunnelStorer.Put(tunnelID, tunnelChan)
 
@@ -155,10 +162,10 @@ func (s *SSHServer) handleWithMime(session ssh.Session, mime string, tunnelID st
 
 	fName := fmt.Sprintf("%s.%s", filename, mime)
 
-	tunnel.w.Header().Set("Content-Type", mime)
-	tunnel.w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fName))
+	tunnel.W.Header().Set("Content-Type", mime)
+	tunnel.W.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fName))
 
-	b, err := io.Copy(tunnel.w, session)
+	b, err := io.Copy(tunnel.W, session)
 	if err != nil {
 		return &CopyDataError{err: err}
 	}
@@ -168,7 +175,7 @@ func (s *SSHServer) handleWithMime(session ssh.Session, mime string, tunnelID st
 
 	s.writer.WriteTransferDone(speed)
 
-	tunnel.donech <- struct{}{}
+	tunnel.Donech <- struct{}{}
 
 	return nil
 }
@@ -209,15 +216,15 @@ func (s *SSHServer) handleWithoutMime(session ssh.Session, tunnelID string) erro
 		fName += ext[len(ext)-1]
 	}
 	// Set the Content-Disposition header to indicate the filename of the downloadable file
-	tunnel.w.Header().Set("Content-Type", mimeer)
-	tunnel.w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fName))
+	tunnel.W.Header().Set("Content-Type", mimeer)
+	tunnel.W.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fName))
 	// Write the buffered data to the tunnel's writer
-	_, err = tunnel.w.Write(buf[:n])
+	_, err = tunnel.W.Write(buf[:n])
 	if err != nil {
 		return &TunnelWriteError{err: err}
 	}
 	// Continue copying the rest of the data to the tunnel's writer
-	b, err := io.Copy(tunnel.w, pr)
+	b, err := io.Copy(tunnel.W, pr)
 	if err != nil {
 		return &CopyDataError{err: err}
 	}
@@ -227,12 +234,12 @@ func (s *SSHServer) handleWithoutMime(session ssh.Session, tunnelID string) erro
 
 	s.writer.WriteTransferDone(speed)
 
-	tunnel.donech <- struct{}{}
+	tunnel.Donech <- struct{}{}
 
 	return nil
 }
 
-func (s *SSHServer) StartSSHServer(ctx context.Context) error {
+func (s *SSHServer) StartServer(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

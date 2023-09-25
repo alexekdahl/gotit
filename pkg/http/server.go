@@ -1,21 +1,28 @@
-package server
+package http
 
 import (
 	"context"
 	"net/http"
 	"time"
 
-	"github.com/AlexEkdahl/gotit/utils/logger"
+	"github.com/AlexEkdahl/gotit/pkg/pipe"
+	"github.com/AlexEkdahl/gotit/pkg/util"
 )
 
-type HTTPServer struct {
-	tunnelStorer TunnelStorer
-	http         http.Server
-	logger       logger.Logger
+type TunnelStorer interface {
+	Get(id string) (chan pipe.Tunnel, bool)
+	Put(id string, tunnel chan pipe.Tunnel)
+	Delete(id string)
 }
 
-func NewHTTPServer(tunnelStorer TunnelStorer, logger logger.Logger, port string) *HTTPServer {
-	s := &HTTPServer{
+type Server struct {
+	tunnelStorer TunnelStorer
+	http         http.Server
+	logger       util.Logger
+}
+
+func NewServer(tunnelStorer TunnelStorer, logger util.Logger, port string) *Server {
+	s := &Server{
 		tunnelStorer: tunnelStorer,
 		http: http.Server{
 			Addr: ":" + port,
@@ -23,12 +30,12 @@ func NewHTTPServer(tunnelStorer TunnelStorer, logger logger.Logger, port string)
 		logger: logger,
 	}
 
-	s.http.Handler = http.HandlerFunc(s.handleHTTPReq)
+	s.http.Handler = http.HandlerFunc(s.handleReq)
 
 	return s
 }
 
-func (s *HTTPServer) StartHTTPServer(ctx context.Context) error {
+func (s *Server) StartServer(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -48,7 +55,7 @@ func (s *HTTPServer) StartHTTPServer(ctx context.Context) error {
 	return nil
 }
 
-func (s *HTTPServer) handleHTTPReq(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleReq(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	tunnelChan, ok := s.tunnelStorer.Get(id)
 	if !ok {
@@ -57,11 +64,11 @@ func (s *HTTPServer) handleHTTPReq(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tunnel := Tunnel{
-		w:      w,
-		donech: make(chan struct{}),
+	tunnel := pipe.Tunnel{
+		W:      w,
+		Donech: make(chan struct{}),
 	}
 
 	tunnelChan <- tunnel
-	<-tunnel.donech
+	<-tunnel.Donech
 }

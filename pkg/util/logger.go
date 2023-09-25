@@ -1,14 +1,12 @@
-package logger
+package util
 
 import (
 	"fmt"
 	"log"
 	"os"
-
-	"github.com/AlexEkdahl/gotit/utils/colors"
 )
 
-type logger struct {
+type SimpleLogger struct {
 	env         string
 	destination *os.File
 	infoLogger  *log.Logger
@@ -40,13 +38,13 @@ func (cp loggerPrefix) toColor() string {
 }
 
 var (
-	infoPrefix  = loggerPrefix{"INFO:  ", colors.InfoColor}
-	warnPrefix  = loggerPrefix{"WARN:  ", colors.WarnColor}
-	errorPrefix = loggerPrefix{"ERROR: ", colors.ErrorColor}
-	debugPrefix = loggerPrefix{"DEBUG: ", colors.DebugColor}
+	infoPrefix  = loggerPrefix{"INFO:  ", InfoColor}
+	warnPrefix  = loggerPrefix{"WARN:  ", WarnColor}
+	errorPrefix = loggerPrefix{"ERROR: ", ErrorColor}
+	debugPrefix = loggerPrefix{"DEBUG: ", DebugColor}
 )
 
-func NewLogger(c Config) (Logger, error) {
+func NewSimpleLogger(c Config) (*SimpleLogger, error) {
 	var dest *os.File
 	var err error
 
@@ -62,7 +60,7 @@ func NewLogger(c Config) (Logger, error) {
 		dest = os.Stdout
 	}
 
-	return &logger{
+	return &SimpleLogger{
 		env:         c.Env,
 		destination: dest,
 		infoLogger:  newLog(dest, infoPrefix, c.Env),
@@ -81,24 +79,24 @@ func newLog(dest *os.File, prefix loggerPrefix, env string) *log.Logger {
 	return l
 }
 
-func (l *logger) Info(format string, v ...interface{}) {
+func (l *SimpleLogger) Info(format string, v ...interface{}) {
 	l.infoLogger.Printf(format, v...)
 }
 
-func (l *logger) Warn(format string, v ...interface{}) {
+func (l *SimpleLogger) Warn(format string, v ...interface{}) {
 	l.warnLogger.Printf(format, v...)
 }
 
-func (l *logger) Error(err error) {
+func (l *SimpleLogger) Error(err error) {
 	l.errorLogger.Printf("%v", err)
 }
 
-func (l *logger) Debug(format string, v ...interface{}) {
+func (l *SimpleLogger) Debug(format string, v ...interface{}) {
 	l.debugLogger.Printf(format, v...)
 }
 
 // Close the logger file
-func (l *logger) Close() error {
+func (l *SimpleLogger) Close() error {
 	if l.env == "PROD" {
 		return l.destination.Close()
 	}

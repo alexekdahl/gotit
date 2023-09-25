@@ -1,4 +1,4 @@
-package server
+package http
 
 import (
 	"context"
@@ -7,20 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AlexEkdahl/gotit/utils/logger"
+	"github.com/AlexEkdahl/gotit/pkg/pipe"
+	"github.com/AlexEkdahl/gotit/pkg/util"
 )
 
-func TestHTTPServer(t *testing.T) {
+func TestServer(t *testing.T) {
 	// Start the HTTP server
-	l, _ := logger.NewLogger(logger.Config{
-		Env: "LOCAL",
-	})
-	tunnelStore := NewTunnel()
-	server := NewHTTPServer(tunnelStore, l, "8080")
+	l := util.NewMockLogger()
+	tunnelStore := pipe.NewTunnelStore()
+	server := NewServer(tunnelStore, l, "8080")
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- server.StartHTTPServer(context.Background())
+		errCh <- server.StartServer(context.Background())
 	}()
 
 	// Wait for the server to start

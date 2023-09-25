@@ -10,8 +10,10 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/AlexEkdahl/gotit/server"
-	"github.com/AlexEkdahl/gotit/utils/logger"
+	"github.com/AlexEkdahl/gotit/pkg/http"
+	"github.com/AlexEkdahl/gotit/pkg/pipe"
+	"github.com/AlexEkdahl/gotit/pkg/ssh"
+	"github.com/AlexEkdahl/gotit/pkg/util"
 )
 
 func main() {
@@ -23,12 +25,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	p, _ := filepath.Abs("loggs.txt")
-	c := logger.Config{
+	c := util.Config{
 		Env:  *env,
 		Path: p,
 	}
 
-	logger, err := logger.NewLogger(c)
+	logger, err := util.NewSimpleLogger(c)
 	if err != nil {
 		log.Printf("Could not instantiate log %s", err.Error())
 		cancel()
@@ -42,9 +44,9 @@ func main() {
 		cancel()
 	}()
 
-	tunnelStorer := server.NewTunnel()
-	httpServer := server.NewHTTPServer(tunnelStorer, logger, *httpPort)
-	sshServer, err := server.NewSSHServer(tunnelStorer, logger, *sshPort)
+	tunnelStorer := pipe.NewTunnelStore()
+	httpServer := http.NewServer(tunnelStorer, logger, *httpPort)
+	sshServer, err := ssh.NewServer(tunnelStorer, logger, *sshPort)
 	if err != nil {
 		logger.Error(err)
 		cancel()
@@ -55,7 +57,7 @@ func main() {
 
 	go func() {
 		defer wg.Done()
-		if err := httpServer.StartHTTPServer(ctx); err != nil {
+		if err := httpServer.StartServer(ctx); err != nil {
 			logger.Error(err)
 			cancel()
 
@@ -64,7 +66,7 @@ func main() {
 
 	go func() {
 		defer wg.Done()
-		if err := sshServer.StartSSHServer(ctx); err != nil {
+		if err := sshServer.StartServer(ctx); err != nil {
 			logger.Error(err)
 			cancel()
 		}
